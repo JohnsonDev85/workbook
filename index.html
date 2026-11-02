@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="sw">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JOHCARDS Customer Service</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <div class="wrap">
+    <header>
+      <h1>JOHCARDS Customer Service</h1>
+      <p id="kichwa">Inapakia wateja...</p>
+    </header>
+
+    <div class="mteja-safu">
+      <select id="chaguaMteja"></select>
+      <button id="mtejaMpya" class="sekondari">+ Mteja Mpya</button>
+      <button id="futaMteja" class="hatari">Futa Mteja</button>
+    </div>
+
+    <div id="fomu" class="fomu" hidden>
+      <h3>Sajili Mteja Mpya</h3>
+
+      <label for="fJina">Jina la mteja / tukio</label>
+      <input id="fJina" type="text" placeholder="Mf. Sendoff ya Jane Ernest Karubi">
+
+      <label for="fLink">Link ya Google Sheet</label>
+      <input id="fLink" type="text" placeholder="https://docs.google.com/spreadsheets/d/...">
+
+      <label for="fTab">Jina la tab lenye michango</label>
+      <input id="fTab" type="text" value="Michango">
+
+      <p id="fUjumbe" class="onyo"></p>
+
+      <div class="fomu-vitufe">
+        <button id="hifadhiMteja" class="pakua">Hifadhi</button>
+        <button id="ghairiMteja" class="sekondari">Ghairi</button>
+      </div>
+    </div>
+
+    <div id="maudhui" hidden>
+      <div class="takwimu" id="takwimu"></div>
+
+      <div class="zana">
+        <input id="tafuta" type="text" placeholder="Tafuta jina...">
+        <button id="sasisha">Sasisha</button>
+      </div>
+
+      <div class="pakua-safu">
+        <button id="pakua" class="pakua">Pakua Excel</button>
+        <p id="ujumbe" class="ujumbe"></p>
+      </div>
+
+      <div class="jedwali-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Jina</th>
+              <th>Ahadi</th>
+              <th>Amelipa</th>
+              <th>Kilichobaki</th>
+              <th>Simu</th>
+              <th>Hali</th>
+            </tr>
+          </thead>
+          <tbody id="mwili"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
