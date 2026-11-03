@@ -152,3 +152,29 @@ td.kulia { text-align: right; }
 }
 .kadi.hajaahidi { border-left: 6px solid #7a6454; }
 .hali.hajaahidi { background: #7a6454; }
+.taarifa {
+  background: #fff;
+  border-left: 6px solid #4f7a3a;
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  font-size: 14px;
+  box-shadow: 0 1px 4px rgba(0,0,0,.08);
+}
+.taarifa.badilika { border-left-color: #e8832a; background: #fff8ee; }
+.taarifa h4 { margin: 0 0 4px; font-size: 15px; color: #5b3a29; }
+.taarifa p { margin: 3px 0; font-size: 13px; color: #7a6454; }
+.taarifa details { margin-top: 8px; }
+.taarifa summary { cursor: pointer; font-weight: bold; color: #5b3a29; }
+.taarifa ul { margin: 6px 0 8px; padding-left: 18px; }
+.taarifa li { margin: 2px 0; }
+.taarifa button {
+  margin-top: 10px;
+  padding: 8px 14px;
+  background: #5b3a29;
+  color: #fff;
+  border: 0;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+}
