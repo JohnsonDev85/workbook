@@ -405,17 +405,33 @@ kitufePakua.addEventListener("click", () => {
   }
 
   const naKadi = kundi === "maliza";
-  const naBaki = kundi !== "hajaahidi";
+
+  // Nguzo za fedha kwa kila kundi. Kila nguzo inakuwa alama ya SMS:
+  // ahadi = [AHADI], kiasi (alicholipa) = [KIASI], baki (anachodaiwa) = [BAKI]
+  const nguzoZaFedha = {
+    wote:      ["ahadi", "kiasi", "baki"],
+    maliza:    ["kiasi"],
+    punguza:   ["ahadi", "kiasi", "baki"],
+    deni:      ["ahadi", "baki"],
+    hajaahidi: []
+  }[kundi] || [];
+
+  const thamani = (x, n) => {
+    if (x.hali === "hajaahidi") return "";
+    if (n === "ahadi") return pesa(x.ahadi);
+    if (n === "kiasi") return pesa(x.amelipa);
+    return pesa(x.baki);
+  };
 
   const vichwa = ["jina", "namba ya simu"];
   const upana = [{ wch: 34 }, { wch: 16 }];
   if (naKadi) { vichwa.push("aina ya kadi"); upana.push({ wch: 14 }); }
-  if (naBaki) { vichwa.push("kiasi kilichobaki"); upana.push({ wch: 18 }); }
+  nguzoZaFedha.forEach(n => { vichwa.push(n); upana.push({ wch: 14 }); });
 
   const data = sawa.map(x => {
     const r = { "jina": x.jina, "namba ya simu": String(x.simu) };
     if (naKadi) r["aina ya kadi"] = x.kadi || "";
-    if (naBaki) r["kiasi kilichobaki"] = x.baki;
+    nguzoZaFedha.forEach(n => { r[n] = thamani(x, n); });
     return r;
   });
 
@@ -430,15 +446,16 @@ kitufePakua.addEventListener("click", () => {
   const tarehe = new Date().toISOString().slice(0, 10);
   XLSX.writeFile(wb, "michango-" + slug + "-" + kundi + "-" + tarehe + ".xlsx");
 
-  let maelezoKadi = "";
+  let maelezo = "";
   if (naKadi) {
     const d = sawa.filter(x => x.kadi === "DOUBLE").length;
     const s = sawa.filter(x => x.kadi === "SINGLE").length;
-    maelezoKadi = " DOUBLE: " + d + ", SINGLE: " + s + ".";
+    maelezo = " DOUBLE: " + d + ", SINGLE: " + s + ".";
   }
 
   ujumbe.textContent =
-    majinaKundi[kundi] + ": imepakuliwa majina " + sawa.length + "." + maelezoKadi +
+    majinaKundi[kundi] + ": imepakuliwa majina " + sawa.length + "." + maelezo +
+    " Nguzo: " + vichwa.join(", ") + "." +
     (hawakujumuishwa
       ? " Hawakujumuishwa: " + hawakujumuishwa + " (hawana namba au ina shida)."
       : "");
