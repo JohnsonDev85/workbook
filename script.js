@@ -16,6 +16,9 @@ const WATEJA = db.collection("michango_wateja");
 const KADI_DOUBLE = 100000;  // ahadi ya 100,000 na zaidi = DOUBLE
 const KADI_SINGLE = 70000;   // ahadi ya 70,000 hadi chini ya 100,000 = SINGLE
 
+const KICHWA_ASILI = "JOHCARDS Customer Service";
+const MUDA_WA_KUKAGUA = 60000;   // kujikagua kila dakika moja
+
 // ====== HALI YA UKURASA ======
 let wateja = [];
 let mtejaSasa = null;
@@ -41,6 +44,13 @@ const fLink = document.getElementById("fLink");
 const fTab = document.getElementById("fTab");
 const fUjumbe = document.getElementById("fUjumbe");
 const kitufeHifadhi = document.getElementById("hifadhiMteja");
+
+// Kisanduku cha taarifa ya mabadiliko (kinatengenezwa hapa, juu ya kadi za takwimu)
+const taarifa = document.createElement("div");
+taarifa.id = "taarifa";
+taarifa.className = "taarifa";
+taarifa.hidden = true;
+takwimu.parentNode.insertBefore(taarifa, takwimu);
 
 const majinaKundi = {
   wote: "Wote",
@@ -166,6 +176,189 @@ function sasishaMuhtasariKadi() {
     (h ? " | No card (pledge below " + pesa(KADI_SINGLE) + "): " + h : "");
 }
 
+// ====== TAARIFA YA MABADILIKO (msingi uliohifadhiwa vs Sheet ya sasa) ======
+
+// Funguo za watu: jina + namba ya mara ngapi jina hilo limejitokeza (kwa majina yanayojirudia)
+function funguoZaWatu(orodha) {
+  const hesabu = {};
+  return orodha.map(x => {
+    const b = x.jina.toUpperCase().replace(/\s+/g, " ").trim();
+    hesabu[b] = (hesabu[b] || 0) + 1;
+    return b + "#" + hesabu[b];
+  });
+}
+
+// Picha fupi ya hali ya sasa: [funguo, jina, ahadi, amelipa, simu]
+function pichaYaSasa(orodha) {
+  const k = funguoZaWatu(orodha);
+  return orodha.map((x, i) => [k[i], x.jina, x.ahadi, x.amelipa, x.simu]);
+}
+
+function linganisha(zamani, sasa) {
+  const m = new Map(zamani.map(r => [r[0], r]));
+  const n = new Map(sasa.map(r => [r[0], r]));
+  const o = {
+    wapya: [], waliotolewa: [], malipoMapya: [], malipoYamepungua: [],
+    ahadi: [], simu: [], waliomalizaWapya: []
+  };
+
+  sasa.forEach(r => {
+    const z = m.get(r[0]);
+    if (!z) {
+      o.wapya.push({ jina: r[1], ahadi: r[2], amelipa: r[3] });
+      return;
+    }
+    if (r[3] > z[3]) o.malipoMapya.push({ jina: r[1], tofauti: r[3] - z[3], jumla: r[3] });
+    else if (r[3] < z[3]) o.malipoYamepungua.push({ jina: r[1], tofauti: z[3] - r[3], jumla: r[3] });
+
+    if (r[2] !== z[2]) o.ahadi.push({ jina: r[1], kutoka: z[2], kuwa: r[2] });
+    if ((r[4] || "") !== (z[4] || "")) o.simu.push({ jina: r[1], kutoka: z[4] || "", kuwa: r[4] || "" });
+
+    const walikuwaMaliza = z[2] > 0 && z[3] >= z[2];
+    const sasaMaliza = r[2] > 0 && r[3] >= r[2];
+    if (sasaMaliza && !walikuwaMaliza) o.waliomalizaWapya.push({ jina: r[1] });
+  });
+
+  zamani.forEach(z => {
+    if (!n.has(z[0])) o.waliotolewa.push({ jina: z[1] });
+  });
+
+  o.jumla = o.wapya.length + o.waliotolewa.length + o.malipoMapya.length +
+            o.malipoYamepungua.length + o.ahadi.length + o.simu.length;
+  return o;
+}
+
+function orodhaHtml(vitu, f) {
+  if (!vitu.length) return "";
+  const kikomo = 15;
+  const li = vitu.slice(0, kikomo).map(v => "<li>" + f(v) + "</li>").join("");
+  const zaidi = vitu.length > kikomo
+    ? "<li>...na wengine " + (vitu.length - kikomo) + "</li>" : "";
+  return "<ul>" + li + zaidi + "</ul>";
+}
+
+function onyeshaTaarifa(o, ujumbeMsingi) {
+  taarifa.hidden = false;
+
+  // Msingi wa kwanza umehifadhiwa sasa hivi
+  if (!o) {
+    taarifa.className = "taarifa";
+    taarifa.innerHTML = "<h4>Msingi umehifadhiwa</h4><p>" + esc(ujumbeMsingi) + "</p>";
+    document.title = KICHWA_ASILI;
+    return;
+  }
+
+  const saaYaKukagua = new Date().toLocaleTimeString("sw-TZ", { hour: "2-digit", minute: "2-digit" });
+  let msingiNa = "";
+  if (mtejaSasa && mtejaSasa.msingiAt) {
+    const d = new Date(mtejaSasa.msingiAt);
+    if (!isNaN(d)) {
+      msingiNa = "Msingi ulihifadhiwa: " +
+        d.toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) + ". ";
+    }
+  }
+
+  if (o.jumla === 0) {
+    taarifa.className = "taarifa";
+    taarifa.innerHTML =
+      "<h4>Hakuna mabadiliko tangu ulipoangalia mwisho (0)</h4>" +
+      "<p>" + msingiNa + "Imekaguliwa saa " + saaYaKukagua + ".</p>";
+    document.title = KICHWA_ASILI;
+    return;
+  }
+
+  const jumlaYaMalipo = o.malipoMapya.reduce((a, x) => a + x.tofauti, 0);
+  const muhtasari = [];
+  if (o.wapya.length) muhtasari.push("Watu wapya: " + o.wapya.length);
+  if (o.malipoMapya.length) muhtasari.push("Malipo mapya: " + o.malipoMapya.length + " (+" + pesa(jumlaYaMalipo) + ")");
+  if (o.waliomalizaWapya.length) muhtasari.push("Wamemaliza wapya: " + o.waliomalizaWapya.length);
+  if (o.malipoYamepungua.length) muhtasari.push("Malipo yaliyopungua: " + o.malipoYamepungua.length);
+  if (o.ahadi.length) muhtasari.push("Ahadi zilizobadilika: " + o.ahadi.length);
+  if (o.simu.length) muhtasari.push("Namba zilizobadilika: " + o.simu.length);
+  if (o.waliotolewa.length) muhtasari.push("Waliotolewa: " + o.waliotolewa.length);
+
+  let maelezo = "";
+  if (o.wapya.length) {
+    maelezo += "<p><b>Watu wapya (" + o.wapya.length + ")</b></p>" +
+      orodhaHtml(o.wapya, v => esc(v.jina) + " - ahadi " + pesa(v.ahadi) + ", amelipa " + pesa(v.amelipa));
+  }
+  if (o.malipoMapya.length) {
+    maelezo += "<p><b>Malipo mapya (" + o.malipoMapya.length + ")</b></p>" +
+      orodhaHtml(o.malipoMapya, v => esc(v.jina) + ": +" + pesa(v.tofauti) + " (jumla " + pesa(v.jumla) + ")");
+  }
+  if (o.waliomalizaWapya.length) {
+    maelezo += "<p><b>Wamemaliza kulipa (" + o.waliomalizaWapya.length + ")</b></p>" +
+      orodhaHtml(o.waliomalizaWapya, v => esc(v.jina));
+  }
+  if (o.malipoYamepungua.length) {
+    maelezo += "<p><b>Malipo yaliyopungua (" + o.malipoYamepungua.length + ")</b></p>" +
+      orodhaHtml(o.malipoYamepungua, v => esc(v.jina) + ": -" + pesa(v.tofauti) + " (sasa " + pesa(v.jumla) + ")");
+  }
+  if (o.ahadi.length) {
+    maelezo += "<p><b>Ahadi zilizobadilika (" + o.ahadi.length + ")</b></p>" +
+      orodhaHtml(o.ahadi, v => esc(v.jina) + ": " + pesa(v.kutoka) + " &rarr; " + pesa(v.kuwa));
+  }
+  if (o.simu.length) {
+    maelezo += "<p><b>Namba zilizobadilika (" + o.simu.length + ")</b></p>" +
+      orodhaHtml(o.simu, v => esc(v.jina) + ": " + esc(v.kutoka || "-") + " &rarr; " + esc(v.kuwa || "-"));
+  }
+  if (o.waliotolewa.length) {
+    maelezo += "<p><b>Waliotolewa (" + o.waliotolewa.length + ")</b></p>" +
+      orodhaHtml(o.waliotolewa, v => esc(v.jina));
+  }
+
+  taarifa.className = "taarifa badilika";
+  taarifa.innerHTML =
+    "<h4>Kuna mabadiliko: " + o.jumla + "</h4>" +
+    "<p>" + esc(muhtasari.join(" | ")) + "</p>" +
+    "<p>" + msingiNa + "Imekaguliwa saa " + saaYaKukagua + ".</p>" +
+    "<details><summary>Angalia maelezo</summary>" + maelezo + "</details>" +
+    '<button id="msingiBtn">Nimeyaona (weka msingi mpya)</button>';
+
+  document.title = "(" + o.jumla + ") " + KICHWA_ASILI;
+}
+
+// Kuhifadhi hali ya sasa kama msingi (Firestore)
+async function wekaMsingi(kwaMaraYaKwanza) {
+  if (!mtejaSasa || !wote.length) return;
+  const json = JSON.stringify(pichaYaSasa(wote));
+  const wakati = new Date().toISOString();
+  try {
+    await WATEJA.doc(mtejaSasa.id).update({ msingiJson: json, msingiAt: wakati });
+    mtejaSasa.msingiJson = json;
+    mtejaSasa.msingiAt = wakati;
+    if (kwaMaraYaKwanza) {
+      onyeshaTaarifa(null,
+        "Hali ya sasa (watu " + wote.length + ") imehifadhiwa kama msingi. Mabadiliko yatakayofuata yataonekana hapa.");
+    } else {
+      onyeshaTaarifa(linganisha(pichaYaSasa(wote), pichaYaSasa(wote)));
+    }
+  } catch (e) {
+    ujumbe.textContent = "Imeshindwa kuhifadhi msingi: " + e.message;
+  }
+}
+
+// Kulinganisha hali ya sasa na msingi
+async function taarifaYaMabadiliko() {
+  if (!mtejaSasa || !wote.length) return;
+
+  let zamani = null;
+  if (mtejaSasa.msingiJson) {
+    try { zamani = JSON.parse(mtejaSasa.msingiJson); } catch (e) { zamani = null; }
+  }
+
+  if (!zamani) {
+    await wekaMsingi(true);
+    return;
+  }
+
+  onyeshaTaarifa(linganisha(zamani, pichaYaSasa(wote)));
+}
+
+taarifa.addEventListener("click", (e) => {
+  if (e.target.closest("#msingiBtn")) wekaMsingi(false);
+});
+
 // ====== WATEJA (FIRESTORE) ======
 async function pakiaWateja(chaguaId) {
   try {
@@ -202,15 +395,18 @@ function badilishaMteja() {
   neno = "";
   tafuta.value = "";
   ujumbe.textContent = "";
+  taarifa.hidden = true;
+  document.title = KICHWA_ASILI;
   maudhui.hidden = false;
-  pakia();
+  pakia(false);
 }
 
 // ====== KUPAKIA DATA YA SHEET ======
-async function pakia() {
+// kimya = true: ukaguzi wa kila dakika (hauonyeshi "inapakia" wala makosa)
+async function pakia(kimya) {
   if (!mtejaSasa) return;
   const kwaMteja = mtejaSasa.id;
-  kichwa.textContent = mtejaSasa.jina + " — inapakia...";
+  if (!kimya) kichwa.textContent = mtejaSasa.jina + " — inapakia...";
 
   try {
     const res = await fetch(urlYaSheet(mtejaSasa));
@@ -259,7 +455,7 @@ async function pakia() {
       );
     }
 
-    wote = [];
+    const watuWapya = [];
     rows.slice(h + 1).forEach(r => {
       const jina = (r[iJina] || "").trim();
       if (!jina) return;
@@ -276,7 +472,7 @@ async function pakia() {
       if (ahadi <= 0 && amelipa > 0) ahadi = amelipa;
 
       const hali = amuaHali(ahadi, amelipa);
-      wote.push({
+      watuWapya.push({
         jina,
         ahadi,
         amelipa,
@@ -287,6 +483,7 @@ async function pakia() {
         kadi: amuaKadi(hali, ahadi)
       });
     });
+    wote = watuWapya;
 
     mudaWaMwisho = new Date();
     const saa = mudaWaMwisho.toLocaleTimeString("sw-TZ", { hour: "2-digit", minute: "2-digit" });
@@ -305,13 +502,16 @@ async function pakia() {
       " | Kilichobaki: " + pesa(jAhadi - jLipa) + " | Last refresh " + saa + onyo;
 
     onyesha();
+    await taarifaYaMabadiliko();
   } catch (e) {
+    if (kimya) return;   // ukaguzi wa kimya hauvurugi ukurasa ukishindwa
     kichwa.textContent =
       mtejaSasa.jina + " — imeshindwa kusoma Sheet: " + e.message;
     wote = [];
     mwili.innerHTML = "";
     takwimu.innerHTML = "";
     muhtasariKadi.textContent = "";
+    taarifa.hidden = true;
   }
 }
 
@@ -748,7 +948,12 @@ tafuta.addEventListener("input", () => {
   neno = tafuta.value.trim().toLowerCase();
   onyesha();
 });
-document.getElementById("sasisha").addEventListener("click", pakia);
+document.getElementById("sasisha").addEventListener("click", () => pakia(false));
 
 // ====== ANZA ======
 pakiaWateja();
+
+// Kujikagua kila dakika ukurasa ukiwa wazi
+setInterval(() => {
+  if (mtejaSasa && !maudhui.hidden) pakia(true);
+}, MUDA_WA_KUKAGUA);
