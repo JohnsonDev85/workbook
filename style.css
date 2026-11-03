@@ -147,3 +147,8 @@ td.kulia { text-align: right; }
 .hali.deni { background: #b23a2e; }
 .onyo { color: #b23a2e; font-size: 12px; }
 .tupu-ujumbe { padding: 20px; text-align: center; color: #7a6454; }
+@media (min-width: 700px) {
+  .takwimu { grid-template-columns: repeat(5, 1fr); }
+}
+.kadi.hajaahidi { border-left: 6px solid #7a6454; }
+.hali.hajaahidi { background: #7a6454; }
