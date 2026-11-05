@@ -35,7 +35,9 @@ const mwili = document.getElementById("mwili");
 const tafuta = document.getElementById("tafuta");
 const kitufePakua = document.getElementById("pakua");
 const kitufeRipoti = document.getElementById("ripoti");
+const ainaExcel = document.getElementById("ainaExcel");
 const ujumbe = document.getElementById("ujumbe");
+const tumwaMaelezo = document.getElementById("tumwaMaelezo");
 const muhtasariKadi = document.getElementById("muhtasariKadi");
 
 const fomu = document.getElementById("fomu");
@@ -132,6 +134,12 @@ function esc(s) {
   }[ch]));
 }
 
+function tareheFupi(iso) {
+  const d = new Date(iso);
+  if (isNaN(d)) return "";
+  return d.toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+}
+
 function kumbukaMteja(id) {
   try { localStorage.setItem("mtejaWaMwisho", id); } catch (e) {}
 }
@@ -150,13 +158,37 @@ function kundiLaSasa() {
   return kadi ? kadi.dataset.k : kichujio;
 }
 
-// Watu wa kundi; kwa "maliza" DOUBLE zinaanza kisha SINGLE
-function watuWaKundi(kundi) {
+// Watu wa kundi.
+// Waliobadilika/wapya wanakuwa chini (kama naMabadiliko = true).
+// Kwa "maliza": DOUBLE kwanza kisha SINGLE.
+function watuWaKundi(kundi, naMabadiliko) {
+  if (naMabadiliko === undefined) naMabadiliko = true;
   const orodha = wote.filter(x => kundi === "wote" || x.hali === kundi);
-  if (kundi === "maliza") {
-    orodha.sort((a, b) => nafasiYaKadi(a.kadi) - nafasiYaKadi(b.kadi));
-  }
+  orodha.sort((a, b) => {
+    if (naMabadiliko) {
+      const d = (a.badilika ? 1 : 0) - (b.badilika ? 1 : 0);
+      if (d !== 0) return d;
+    }
+    if (kundi === "maliza") return nafasiYaKadi(a.kadi) - nafasiYaKadi(b.kadi);
+    return 0;
+  });
   return orodha;
+}
+
+// ====== ALAMA ZA WALIOTUMIWA SMS (Firestore) ======
+// Muundo: { kundi: { at: "tarehe", keys: ["JINA#1", ...] } }
+function somaTumwa() {
+  if (!mtejaSasa) return {};
+  try {
+    const t = JSON.parse(mtejaSasa.tumwaJson || "{}");
+    return (t && typeof t === "object") ? t : {};
+  } catch (e) { return {}; }
+}
+
+async function hifadhiTumwa(t) {
+  const json = JSON.stringify(t);
+  await WATEJA.doc(mtejaSasa.id).update({ tumwaJson: json });
+  mtejaSasa.tumwaJson = json;
 }
 
 function sasishaKitufe() {
@@ -164,6 +196,11 @@ function sasishaKitufe() {
   const naSimu = watuWaKundi(kundi).filter(x => x.simuHali === "sawa").length;
   kitufePakua.textContent =
     "Pakua Excel: " + majinaKundi[kundi] + " (" + naSimu + ")";
+
+  const r = somaTumwa()[kundi];
+  tumwaMaelezo.textContent = (r && r.keys && r.keys.length)
+    ? "Kundi hili: walitumiwa SMS mara ya mwisho: " + r.keys.length + " (" + tareheFupi(r.at) + ")."
+    : "Kundi hili: bado hujapakua Excel ya SMS.";
 }
 
 function sasishaMuhtasariKadi() {
@@ -171,9 +208,16 @@ function sasishaMuhtasariKadi() {
   const d = w.filter(x => x.kadi === "DOUBLE").length;
   const s = w.filter(x => x.kadi === "SINGLE").length;
   const h = w.length - d - s;
-  muhtasariKadi.textContent =
+  let maandishi =
     "Cards (completed): DOUBLE " + d + " | SINGLE " + s +
     (h ? " | No card (pledge below " + pesa(KADI_SINGLE) + "): " + h : "");
+
+  const watuWaRudia = wote.filter(x => x.simuRudia).length;
+  const nambaZaRudia = new Set(wote.filter(x => x.simuRudia).map(x => x.simu)).size;
+  const hazina = wote.filter(x => x.simuHali !== "sawa").length;
+  if (nambaZaRudia) maandishi += " | Namba zinazojirudia: " + nambaZaRudia + " (watu " + watuWaRudia + ")";
+  if (hazina) maandishi += " | Hazina namba au zina shida: " + hazina;
+  muhtasariKadi.textContent = maandishi;
 }
 
 // ====== TAARIFA YA MABADILIKO (msingi uliohifadhiwa vs Sheet ya sasa) ======
@@ -190,8 +234,7 @@ function funguoZaWatu(orodha) {
 
 // Picha fupi ya hali ya sasa: [funguo, jina, ahadi, amelipa, simu]
 function pichaYaSasa(orodha) {
-  const k = funguoZaWatu(orodha);
-  return orodha.map((x, i) => [k[i], x.jina, x.ahadi, x.amelipa, x.simu]);
+  return orodha.map(x => [x.funguo, x.jina, x.ahadi, x.amelipa, x.simu]);
 }
 
 function linganisha(zamani, sasa) {
@@ -199,29 +242,40 @@ function linganisha(zamani, sasa) {
   const n = new Map(sasa.map(r => [r[0], r]));
   const o = {
     wapya: [], waliotolewa: [], malipoMapya: [], malipoYamepungua: [],
-    ahadi: [], simu: [], waliomalizaWapya: []
+    ahadi: [], simu: [], waliomalizaWapya: [], alama: new Map()
   };
 
   sasa.forEach(r => {
     const z = m.get(r[0]);
     if (!z) {
-      o.wapya.push({ jina: r[1], ahadi: r[2], amelipa: r[3] });
+      o.wapya.push({ funguo: r[0], jina: r[1], ahadi: r[2], amelipa: r[3] });
       return;
     }
-    if (r[3] > z[3]) o.malipoMapya.push({ jina: r[1], tofauti: r[3] - z[3], jumla: r[3] });
-    else if (r[3] < z[3]) o.malipoYamepungua.push({ jina: r[1], tofauti: z[3] - r[3], jumla: r[3] });
+    if (r[3] > z[3]) o.malipoMapya.push({ funguo: r[0], jina: r[1], tofauti: r[3] - z[3], jumla: r[3] });
+    else if (r[3] < z[3]) o.malipoYamepungua.push({ funguo: r[0], jina: r[1], tofauti: z[3] - r[3], jumla: r[3] });
 
-    if (r[2] !== z[2]) o.ahadi.push({ jina: r[1], kutoka: z[2], kuwa: r[2] });
-    if ((r[4] || "") !== (z[4] || "")) o.simu.push({ jina: r[1], kutoka: z[4] || "", kuwa: r[4] || "" });
+    if (r[2] !== z[2]) o.ahadi.push({ funguo: r[0], jina: r[1], kutoka: z[2], kuwa: r[2] });
+    if ((r[4] || "") !== (z[4] || "")) o.simu.push({ funguo: r[0], jina: r[1], kutoka: z[4] || "", kuwa: r[4] || "" });
 
     const walikuwaMaliza = z[2] > 0 && z[3] >= z[2];
     const sasaMaliza = r[2] > 0 && r[3] >= r[2];
-    if (sasaMaliza && !walikuwaMaliza) o.waliomalizaWapya.push({ jina: r[1] });
+    if (sasaMaliza && !walikuwaMaliza) o.waliomalizaWapya.push({ funguo: r[0], jina: r[1] });
   });
 
   zamani.forEach(z => {
     if (!n.has(z[0])) o.waliotolewa.push({ jina: z[1] });
   });
+
+  // Lebo ya kila mtu aliyebadilika (ya kwanza kwa kipaumbele inashinda)
+  const weka = (arr, lebo) => arr.forEach(v => {
+    if (!o.alama.has(v.funguo)) o.alama.set(v.funguo, lebo);
+  });
+  weka(o.wapya, "MPYA");
+  weka(o.waliomalizaWapya, "AMEMALIZA");
+  weka(o.malipoMapya, "AMELIPA");
+  weka(o.ahadi, "AHADI");
+  weka(o.simu, "NAMBA");
+  weka(o.malipoYamepungua, "MALIPO YAMEPUNGUA");
 
   o.jumla = o.wapya.length + o.waliotolewa.length + o.malipoMapya.length +
             o.malipoYamepungua.length + o.ahadi.length + o.simu.length;
@@ -251,11 +305,8 @@ function onyeshaTaarifa(o, ujumbeMsingi) {
   const saaYaKukagua = new Date().toLocaleTimeString("sw-TZ", { hour: "2-digit", minute: "2-digit" });
   let msingiNa = "";
   if (mtejaSasa && mtejaSasa.msingiAt) {
-    const d = new Date(mtejaSasa.msingiAt);
-    if (!isNaN(d)) {
-      msingiNa = "Msingi ulihifadhiwa: " +
-        d.toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) + ". ";
-    }
+    const t = tareheFupi(mtejaSasa.msingiAt);
+    if (t) msingiNa = "Msingi ulihifadhiwa: " + t + ". ";
   }
 
   if (o.jumla === 0) {
@@ -318,6 +369,25 @@ function onyeshaTaarifa(o, ujumbeMsingi) {
   document.title = "(" + o.jumla + ") " + KICHWA_ASILI;
 }
 
+// Kulinganisha hali ya sasa na msingi, na kuweka lebo kwa kila mtu aliyebadilika
+function tathminiMabadiliko() {
+  wote.forEach(x => { x.badilika = false; x.alama = ""; });
+  if (!mtejaSasa || !wote.length) return null;
+
+  let zamani = null;
+  if (mtejaSasa.msingiJson) {
+    try { zamani = JSON.parse(mtejaSasa.msingiJson); } catch (e) { zamani = null; }
+  }
+  if (!Array.isArray(zamani)) return { kwanza: true, o: null };
+
+  const o = linganisha(zamani, pichaYaSasa(wote));
+  wote.forEach(x => {
+    const a = o.alama.get(x.funguo);
+    if (a) { x.badilika = true; x.alama = a; }
+  });
+  return { kwanza: false, o };
+}
+
 // Kuhifadhi hali ya sasa kama msingi (Firestore)
 async function wekaMsingi(kwaMaraYaKwanza) {
   if (!mtejaSasa || !wote.length) return;
@@ -331,28 +401,13 @@ async function wekaMsingi(kwaMaraYaKwanza) {
       onyeshaTaarifa(null,
         "Hali ya sasa (watu " + wote.length + ") imehifadhiwa kama msingi. Mabadiliko yatakayofuata yataonekana hapa.");
     } else {
-      onyeshaTaarifa(linganisha(pichaYaSasa(wote), pichaYaSasa(wote)));
+      const t = tathminiMabadiliko();   // sasa hakuna aliyebadilika
+      onyesha();
+      onyeshaTaarifa(t.o);
     }
   } catch (e) {
     ujumbe.textContent = "Imeshindwa kuhifadhi msingi: " + e.message;
   }
-}
-
-// Kulinganisha hali ya sasa na msingi
-async function taarifaYaMabadiliko() {
-  if (!mtejaSasa || !wote.length) return;
-
-  let zamani = null;
-  if (mtejaSasa.msingiJson) {
-    try { zamani = JSON.parse(mtejaSasa.msingiJson); } catch (e) { zamani = null; }
-  }
-
-  if (!zamani) {
-    await wekaMsingi(true);
-    return;
-  }
-
-  onyeshaTaarifa(linganisha(zamani, pichaYaSasa(wote)));
 }
 
 taarifa.addEventListener("click", (e) => {
@@ -485,6 +540,17 @@ async function pakia(kimya) {
     });
     wote = watuWapya;
 
+    // Funguo za kila mtu (kwa mabadiliko na alama za kutumwa)
+    const funguo = funguoZaWatu(wote);
+    wote.forEach((x, i) => { x.funguo = funguo[i]; });
+
+    // Namba zinazojirudia
+    const hesabuSimu = {};
+    wote.forEach(x => { if (x.simu) hesabuSimu[x.simu] = (hesabuSimu[x.simu] || 0) + 1; });
+    wote.forEach(x => { x.simuRudia = !!(x.simu && hesabuSimu[x.simu] > 1); });
+
+    const t = tathminiMabadiliko();
+
     mudaWaMwisho = new Date();
     const saa = mudaWaMwisho.toLocaleTimeString("sw-TZ", { hour: "2-digit", minute: "2-digit" });
     const jAhadi = wote.reduce((a, x) => a + x.ahadi, 0);
@@ -502,7 +568,9 @@ async function pakia(kimya) {
       " | Kilichobaki: " + pesa(jAhadi - jLipa) + " | Last refresh " + saa + onyo;
 
     onyesha();
-    await taarifaYaMabadiliko();
+
+    if (t && t.kwanza) await wekaMsingi(true);
+    else if (t && t.o) onyeshaTaarifa(t.o);
   } catch (e) {
     if (kimya) return;   // ukaguzi wa kimya hauvurugi ukurasa ukishindwa
     kichwa.textContent =
@@ -557,6 +625,7 @@ function onyesha() {
     if (x.simuHali === "tupu") simuHtml = '<span class="onyo">Hana namba</span>';
     else if (x.simuHali === "kosa") simuHtml = esc(x.simu) + ' <span class="onyo">(ina shida)</span>';
     else simuHtml = esc(x.simu);
+    if (x.simuRudia) simuHtml += ' <span class="onyo">(imejirudia)</span>';
 
     const kadiHtml = x.kadi
       ? '<span class="aina ' + x.kadi.toLowerCase() + '">' + x.kadi + "</span>"
@@ -564,10 +633,11 @@ function onyesha() {
 
     const ahadiHtml = x.hali === "hajaahidi" ? "—" : pesa(x.ahadi);
     const bakiHtml = x.hali === "hajaahidi" ? "—" : pesa(x.baki);
+    const lebo = x.badilika ? '<span class="alama">' + esc(x.alama) + "</span>" : "";
 
-    return "<tr>" +
+    return "<tr" + (x.badilika ? ' class="badilika"' : "") + ">" +
       "<td>" + (i + 1) + "</td>" +
-      "<td>" + esc(x.jina) + "</td>" +
+      "<td>" + esc(x.jina) + lebo + "</td>" +
       '<td class="kulia">' + ahadiHtml + "</td>" +
       '<td class="kulia">' + pesa(x.amelipa) + "</td>" +
       '<td class="kulia">' + bakiHtml + "</td>" +
@@ -587,24 +657,113 @@ takwimu.addEventListener("click", (e) => {
   onyesha();
 });
 
-// ====== KUPAKUA EXCEL ======
-kitufePakua.addEventListener("click", () => {
+// ====== KUPAKUA EXCEL (SMS au kawaida) ======
+kitufePakua.addEventListener("click", async () => {
   if (typeof XLSX === "undefined") {
     ujumbe.textContent = "Maktaba ya Excel haijapakia. Jaribu kusasisha ukurasa.";
     return;
   }
+  if (!mtejaSasa) return;
 
   const kundi = kundiLaSasa();
+  const aina = ainaExcel.value;   // sms-wapya | sms-wote | kawaida
   const k = watuWaKundi(kundi);
-  const sawa = k.filter(x => x.simuHali === "sawa");
-  const hawakujumuishwa = k.length - sawa.length;
+  const naKadi = kundi === "maliza";
 
-  if (!sawa.length) {
-    ujumbe.textContent = "Hakuna majina yenye namba sahihi kwenye kundi hili (" + majinaKundi[kundi] + ").";
+  const tumwa = somaTumwa();
+  const rekodi = tumwa[kundi] || { at: "", keys: [] };
+  const walioTumiwa = new Set(rekodi.keys || []);
+
+  const slug = (mtejaSasa.jina || "mteja")
+    .toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 30) || "mteja";
+  const tarehe = new Date().toISOString().slice(0, 10);
+
+  // ---------- EXCEL YA KAWAIDA (ripoti, na mstari wa waliotumiwa) ----------
+  if (aina === "kawaida") {
+    const vichwa = ["jina", "namba ya simu", "ahadi", "kiasi", "baki", "hali"];
+    const upana = [{ wch: 34 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 14 }];
+    if (naKadi) { vichwa.push("aina ya kadi"); upana.push({ wch: 14 }); }
+    vichwa.push("hali ya namba", "imetumwa SMS");
+    upana.push({ wch: 16 }, { wch: 14 });
+
+    const halaYaNamba = (x) =>
+      x.simuHali === "tupu" ? "HANA" :
+      x.simuHali === "kosa" ? "INA SHIDA" :
+      x.simuRudia ? "IMEJIRUDIA" : "SAWA";
+
+    const mstari = (x, tumiwa) => {
+      const r = {
+        "jina": x.jina,
+        "namba ya simu": String(x.simu || ""),
+        "ahadi": x.hali === "hajaahidi" ? "" : x.ahadi,
+        "kiasi": x.amelipa,
+        "baki": x.hali === "hajaahidi" ? "" : x.baki,
+        "hali": majinaHali[x.hali]
+      };
+      if (naKadi) r["aina ya kadi"] = x.kadi || "";
+      r["hali ya namba"] = halaYaNamba(x);
+      r["imetumwa SMS"] = tumiwa ? "NDIO" : "HAPANA";
+      return r;
+    };
+
+    const waliotumwa = k.filter(x => walioTumiwa.has(x.funguo));
+    const wapya = k.filter(x => !walioTumiwa.has(x.funguo));
+
+    const data = waliotumwa.map(x => mstari(x, true));
+    if (waliotumwa.length) {
+      const sep = {};
+      vichwa.forEach(v => { sep[v] = ""; });
+      sep["jina"] = "======== MSTARI: hapo juu walitumiwa SMS (" + tareheFupi(rekodi.at) + ") ========";
+      data.push(sep);
+    }
+    wapya.forEach(x => data.push(mstari(x, false)));
+
+    if (!data.length) {
+      ujumbe.textContent = "Hakuna majina kwenye kundi hili (" + majinaKundi[kundi] + ").";
+      return;
+    }
+
+    const ws = XLSX.utils.json_to_sheet(data, { header: vichwa });
+    ws["!cols"] = upana;
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Ripoti");
+    XLSX.writeFile(wb, "michango-" + slug + "-" + kundi + "-kawaida-" + tarehe + ".xlsx");
+
+    ujumbe.textContent =
+      majinaKundi[kundi] + ": Excel ya kawaida imepakuliwa. Majina " + k.length +
+      " (walitumiwa awali: " + waliotumwa.length + ", wapya: " + wapya.length + ").";
     return;
   }
 
-  const naKadi = kundi === "maliza";
+  // ---------- EXCEL YA SMS ----------
+  let orodha = k.filter(x => x.simuHali === "sawa");
+  const hawana = k.length - orodha.length;
+
+  // Namba inayojirudia: acha mtu wa kwanza tu (ili namba moja isipate SMS mbili)
+  const zilizoonekana = new Set();
+  let rudia = 0;
+  orodha = orodha.filter(x => {
+    if (zilizoonekana.has(x.simu)) { rudia++; return false; }
+    zilizoonekana.add(x.simu);
+    return true;
+  });
+
+  // "Wapya tu": ondoa waliotumiwa awali
+  let walishatumiwa = 0;
+  if (aina === "sms-wapya") {
+    orodha = orodha.filter(x => {
+      if (walioTumiwa.has(x.funguo)) { walishatumiwa++; return false; }
+      return true;
+    });
+  }
+
+  if (!orodha.length) {
+    ujumbe.textContent = aina === "sms-wapya"
+      ? "Hakuna wapya wa kutumiwa kwenye kundi hili (" + majinaKundi[kundi] + "): wote walishatumiwa (" + walishatumiwa +
+        "). Chagua 'Excel ya SMS: wote' kama unataka kutuma tena."
+      : "Hakuna majina yenye namba sahihi kwenye kundi hili (" + majinaKundi[kundi] + ").";
+    return;
+  }
 
   // Nguzo za fedha kwa kila kundi. Kila nguzo inakuwa alama ya SMS:
   // ahadi = [AHADI], kiasi (alicholipa) = [KIASI], baki (anachodaiwa) = [BAKI]
@@ -628,7 +787,7 @@ kitufePakua.addEventListener("click", () => {
   if (naKadi) { vichwa.push("aina ya kadi"); upana.push({ wch: 14 }); }
   nguzoZaFedha.forEach(n => { vichwa.push(n); upana.push({ wch: 14 }); });
 
-  const data = sawa.map(x => {
+  const data = orodha.map(x => {
     const r = { "jina": x.jina, "namba ya simu": String(x.simu) };
     if (naKadi) r["aina ya kadi"] = x.kadi || "";
     nguzoZaFedha.forEach(n => { r[n] = thamani(x, n); });
@@ -637,28 +796,63 @@ kitufePakua.addEventListener("click", () => {
 
   const ws = XLSX.utils.json_to_sheet(data, { header: vichwa });
   ws["!cols"] = upana;
-
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Majina");
+  XLSX.writeFile(wb, "michango-" + slug + "-" + kundi + "-sms-" + tarehe + ".xlsx");
 
-  const slug = (mtejaSasa ? mtejaSasa.jina : "mteja")
-    .toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 30) || "mteja";
-  const tarehe = new Date().toISOString().slice(0, 10);
-  XLSX.writeFile(wb, "michango-" + slug + "-" + kundi + "-" + tarehe + ".xlsx");
+  // Rekodi waliotumiwa: "wapya" huongeza; "wote" inaandika upya
+  const funguoZilizopakuliwa = orodha.map(x => x.funguo);
+  const funguoMpya = aina === "sms-wapya"
+    ? Array.from(new Set((rekodi.keys || []).concat(funguoZilizopakuliwa)))
+    : funguoZilizopakuliwa;
+  tumwa[kundi] = { at: new Date().toISOString(), keys: funguoMpya };
 
-  let maelezo = "";
+  let hifadhiOnyo = "";
+  try {
+    await hifadhiTumwa(tumwa);
+  } catch (e) {
+    hifadhiOnyo = " ONYO: alama ya waliotumiwa haikuhifadhiwa (" + e.message + ").";
+  }
+
+  let maelezoKadi = "";
   if (naKadi) {
-    const d = sawa.filter(x => x.kadi === "DOUBLE").length;
-    const s = sawa.filter(x => x.kadi === "SINGLE").length;
-    maelezo = " DOUBLE: " + d + ", SINGLE: " + s + ".";
+    const d = orodha.filter(x => x.kadi === "DOUBLE").length;
+    const s = orodha.filter(x => x.kadi === "SINGLE").length;
+    maelezoKadi = " DOUBLE: " + d + ", SINGLE: " + s + ".";
   }
 
   ujumbe.textContent =
-    majinaKundi[kundi] + ": imepakuliwa majina " + sawa.length + "." + maelezo +
-    " Nguzo: " + vichwa.join(", ") + "." +
-    (hawakujumuishwa
-      ? " Hawakujumuishwa: " + hawakujumuishwa + " (hawana namba au ina shida)."
-      : "");
+    majinaKundi[kundi] + ": Excel ya SMS imepakuliwa, majina " + orodha.length + "." + maelezoKadi +
+    (walishatumiwa ? " Walioachwa kwa kuwa walitumiwa awali: " + walishatumiwa + "." : "") +
+    (rudia ? " Namba zinazojirudia (zimeachwa): " + rudia + "." : "") +
+    (hawana ? " Hawana namba au ina shida: " + hawana + "." : "") +
+    " Nguzo: " + vichwa.join(", ") + "." + hifadhiOnyo;
+
+  sasishaKitufe();
+});
+
+// ====== KUFUTA ALAMA YA KUTUMWA (kundi lililochaguliwa) ======
+document.getElementById("futaTumwa").addEventListener("click", async () => {
+  if (!mtejaSasa) return;
+  const kundi = kundiLaSasa();
+  const tumwa = somaTumwa();
+  if (!tumwa[kundi] || !(tumwa[kundi].keys || []).length) {
+    ujumbe.textContent = "Hakuna alama ya kutumwa kwa kundi hili (" + majinaKundi[kundi] + ").";
+    return;
+  }
+  const ndiyo = confirm(
+    'Futa alama ya waliotumiwa SMS kwa kundi "' + majinaKundi[kundi] +
+    '"? Wote watahesabiwa tena kama wapya.'
+  );
+  if (!ndiyo) return;
+  delete tumwa[kundi];
+  try {
+    await hifadhiTumwa(tumwa);
+    ujumbe.textContent = "Alama ya kutumwa imefutwa kwa kundi: " + majinaKundi[kundi] + ".";
+    sasishaKitufe();
+  } catch (e) {
+    ujumbe.textContent = "Imeshindwa kufuta alama: " + e.message;
+  }
 });
 
 // ====== PDF REPORT (Kiswahili; "Last updated" na "Collection percentage" kwa Kiingereza) ======
@@ -687,8 +881,8 @@ function tengenezaPDF() {
   const NYEKUNDU = [178, 58, 46];
   const KIJIVU = [120, 100, 84];
 
-  // ---- Takwimu ----
-  const maliza = watuWaKundi("maliza");
+  // ---- Takwimu (PDF haitumii mpangilio wa "waliobadilika chini") ----
+  const maliza = watuWaKundi("maliza", false);
   const punguza = wote.filter(x => x.hali === "punguza");
   const deni = wote.filter(x => x.hali === "deni");
   const hajaahidi = wote.filter(x => x.hali === "hajaahidi");
