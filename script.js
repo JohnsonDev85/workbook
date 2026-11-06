@@ -105,6 +105,12 @@ function safishaSimu(v) {
   return { simu: d, hali: sawa ? "sawa" : "kosa" };
 }
 
+// Maelezo ya kwa nini namba ina shida (kwa kutumia namba kama ilivyoandikwa kwenye Sheet)
+function maelezoYaNamba(x) {
+  const d = String(x.simuAsili || "").replace(/\D/g, "");
+  return "Ina tarakimu " + d.length + " (inatakiwa 12 zianze na 255, au 10 zianze na 0)";
+}
+
 function amuaHali(ahadi, amelipa) {
   if (ahadi <= 0 && amelipa <= 0) return "hajaahidi";
   if (amelipa <= 0) return "deni";
@@ -193,14 +199,22 @@ async function hifadhiTumwa(t) {
 
 function sasishaKitufe() {
   const kundi = kundiLaSasa();
-  const naSimu = watuWaKundi(kundi).filter(x => x.simuHali === "sawa").length;
+  const k = watuWaKundi(kundi);
+  const naSimu = k.filter(x => x.simuHali === "sawa").length;
   kitufePakua.textContent =
     "Pakua Excel: " + majinaKundi[kundi] + " (" + naSimu + ")";
 
   const r = somaTumwa()[kundi];
-  tumwaMaelezo.textContent = (r && r.keys && r.keys.length)
+  let maandishi = (r && r.keys && r.keys.length)
     ? "Kundi hili: walitumiwa SMS mara ya mwisho: " + r.keys.length + " (" + tareheFupi(r.at) + ")."
     : "Kundi hili: bado hujapakua Excel ya SMS.";
+
+  const hana = k.filter(x => x.simuHali === "tupu").length;
+  const kosa = k.filter(x => x.simuHali === "kosa").length;
+  const rudia = k.filter(x => x.simuRudia).length;
+  maandishi += " Makosa ya namba (kundi hili): hazipo " + hana +
+    " | zina shida " + kosa + " | zimejirudia " + rudia + ".";
+  tumwaMaelezo.textContent = maandishi;
 }
 
 function sasishaMuhtasariKadi() {
@@ -498,6 +512,8 @@ async function pakia(kimya) {
     const iAhadi = colKwa(["AHIDIWA", "AHADI"]);
     const iLipa = colKwa(["PUNGUZ", "PINGUZ", "MALIZO", "LIPWA", "LIPA"]);
     const iSimu = colKwa(["SIMU"]);
+    // Nguzo ya S/N (kama ipo) - inasaidia kupata mstari kwenye Sheet
+    const iSn = head.findIndex(c => ["S/N", "SN", "NO", "NO."].includes(c.trim()));
 
     const zilizokosekana = [];
     if (iAhadi < 0) zilizokosekana.push("AHIDIWA");
@@ -529,10 +545,12 @@ async function pakia(kimya) {
       const hali = amuaHali(ahadi, amelipa);
       watuWapya.push({
         jina,
+        sn: iSn >= 0 ? String(r[iSn] || "").trim() : "",
         ahadi,
         amelipa,
         baki: Math.max(ahadi - amelipa, 0),
         simu: s.simu,
+        simuAsili: String(r[iSimu] || "").trim(),
         simuHali: s.hali,
         hali,
         kadi: amuaKadi(hali, ahadi)
@@ -657,7 +675,7 @@ takwimu.addEventListener("click", (e) => {
   onyesha();
 });
 
-// ====== KUPAKUA EXCEL (SMS au kawaida) ======
+// ====== KUPAKUA EXCEL (SMS, kawaida, au makosa ya namba) ======
 kitufePakua.addEventListener("click", async () => {
   if (typeof XLSX === "undefined") {
     ujumbe.textContent = "Maktaba ya Excel haijapakia. Jaribu kusasisha ukurasa.";
@@ -666,7 +684,7 @@ kitufePakua.addEventListener("click", async () => {
   if (!mtejaSasa) return;
 
   const kundi = kundiLaSasa();
-  const aina = ainaExcel.value;   // sms-wapya | sms-wote | kawaida
+  const aina = ainaExcel.value;   // sms-wapya | sms-wote | kawaida | makosa-*
   const k = watuWaKundi(kundi);
   const naKadi = kundi === "maliza";
 
@@ -677,6 +695,98 @@ kitufePakua.addEventListener("click", async () => {
   const slug = (mtejaSasa.jina || "mteja")
     .toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 30) || "mteja";
   const tarehe = new Date().toISOString().slice(0, 10);
+
+  // ---------- EXCEL YA MAKOSA YA NAMBA (kurekebisha Sheet) ----------
+  if (aina.indexOf("makosa-") === 0) {
+    // Namba -> majina ya wote wanaoitumia (kwa kuonyesha wanaojirudia)
+    const kwaSimu = {};
+    wote.forEach(x => {
+      if (x.simu) (kwaSimu[x.simu] = kwaSimu[x.simu] || []).push(x.jina);
+    });
+
+    const matatizoYa = (x) => {
+      const t = [];
+      if (x.simuHali === "tupu") t.push("HANA NAMBA");
+      if (x.simuHali === "kosa") t.push("NAMBA INA SHIDA");
+      if (x.simuRudia) t.push("IMEJIRUDIA");
+      return t;
+    };
+
+    const chujio = {
+      "makosa-yote": t => t.length > 0,
+      "makosa-rudia": t => t.indexOf("IMEJIRUDIA") >= 0,
+      "makosa-kosa": t => t.indexOf("NAMBA INA SHIDA") >= 0,
+      "makosa-hana": t => t.indexOf("HANA NAMBA") >= 0
+    }[aina];
+
+    const kipaumbele = (t) =>
+      t.indexOf("HANA NAMBA") >= 0 ? 0 :
+      t.indexOf("NAMBA INA SHIDA") >= 0 ? 1 : 2;
+
+    const wenye = k
+      .map(x => ({ x, t: matatizoYa(x) }))
+      .filter(o => chujio(o.t));
+
+    // Wanaoshiriki namba moja wanakaa pamoja
+    wenye.sort((a, b) =>
+      kipaumbele(a.t) - kipaumbele(b.t) ||
+      String(a.x.simu).localeCompare(String(b.x.simu)) ||
+      a.x.jina.localeCompare(b.x.jina)
+    );
+
+    if (!wenye.length) {
+      ujumbe.textContent =
+        "Hakuna makosa ya namba ya aina hii kwenye kundi hili (" + majinaKundi[kundi] + ").";
+      return;
+    }
+
+    const naSn = wote.some(x => x.sn);
+    const vichwa = [];
+    const upana = [];
+    if (naSn) { vichwa.push("S/N kwenye Sheet"); upana.push({ wch: 16 }); }
+    vichwa.push("jina", "namba kwenye Sheet", "tatizo", "maelezo", "hali ya malipo", "ahadi", "kiasi");
+    upana.push({ wch: 34 }, { wch: 20 }, { wch: 30 }, { wch: 55 }, { wch: 16 }, { wch: 12 }, { wch: 12 });
+
+    const data = wenye.map(o => {
+      const x = o.x;
+      const maelezo = [];
+      if (x.simuHali === "kosa") maelezo.push(maelezoYaNamba(x) + ".");
+      if (x.simuRudia) {
+        const wengine = (kwaSimu[x.simu] || []).slice();
+        const idx = wengine.indexOf(x.jina);
+        if (idx >= 0) wengine.splice(idx, 1);
+        maelezo.push("Inajirudia na: " + wengine.join(", ") + ".");
+      }
+      const r = {};
+      if (naSn) r["S/N kwenye Sheet"] = x.sn;
+      r["jina"] = x.jina;
+      r["namba kwenye Sheet"] = x.simuAsili;
+      r["tatizo"] = o.t.join(" + ");
+      r["maelezo"] = maelezo.join(" ");
+      r["hali ya malipo"] = majinaHali[x.hali];
+      r["ahadi"] = x.hali === "hajaahidi" ? "" : x.ahadi;
+      r["kiasi"] = x.amelipa;
+      return r;
+    });
+
+    const ws = XLSX.utils.json_to_sheet(data, { header: vichwa });
+    ws["!cols"] = upana;
+    // Kichujio cha Excel juu ya nguzo (kuchuja kwa tatizo)
+    ws["!autofilter"] = {
+      ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: data.length, c: vichwa.length - 1 } })
+    };
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Makosa ya namba");
+    XLSX.writeFile(wb, "michango-" + slug + "-" + kundi + "-" + aina + "-" + tarehe + ".xlsx");
+
+    const hana = wenye.filter(o => o.t.indexOf("HANA NAMBA") >= 0).length;
+    const kosa = wenye.filter(o => o.t.indexOf("NAMBA INA SHIDA") >= 0).length;
+    const rudia = wenye.filter(o => o.t.indexOf("IMEJIRUDIA") >= 0).length;
+    ujumbe.textContent =
+      majinaKundi[kundi] + ": Excel ya makosa ya namba imepakuliwa, majina " + wenye.length +
+      " (hana namba " + hana + ", zina shida " + kosa + ", zimejirudia " + rudia + ").";
+    return;
+  }
 
   // ---------- EXCEL YA KAWAIDA (ripoti, na mstari wa waliotumiwa) ----------
   if (aina === "kawaida") {
