@@ -50,9 +50,19 @@
 
       <div class="pakua-safu">
         <select id="ainaExcel">
-          <option value="sms-wapya">Excel ya SMS: wapya tu (ambao hawajatumiwa)</option>
-          <option value="sms-wote">Excel ya SMS: wote</option>
-          <option value="kawaida">Excel ya kawaida (ripoti + alama ya waliotumiwa)</option>
+          <optgroup label="Kwa ajili ya SMS">
+            <option value="sms-wapya">Excel ya SMS: wapya tu (ambao hawajatumiwa)</option>
+            <option value="sms-wote">Excel ya SMS: wote</option>
+          </optgroup>
+          <optgroup label="Ripoti">
+            <option value="kawaida">Excel ya kawaida (ripoti + alama ya waliotumiwa)</option>
+          </optgroup>
+          <optgroup label="Kurekebisha namba kwenye Sheet">
+            <option value="makosa-yote">Makosa ya namba: yote</option>
+            <option value="makosa-rudia">Namba zilizojirudia tu</option>
+            <option value="makosa-kosa">Namba zilizokosewa tu</option>
+            <option value="makosa-hana">Wasio na namba tu</option>
+          </optgroup>
         </select>
         <button id="pakua" class="pakua">Pakua Excel</button>
         <button id="ripoti" class="sekondari">PDF Report</button>
